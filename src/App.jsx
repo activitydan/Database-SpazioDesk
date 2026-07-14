@@ -28,6 +28,42 @@ async function save(key, val) {
   }
 }
 
+// ── Accesso ──────────────────────────────────────────────────
+// Password condivisa opzionale: se VITE_APP_PASSWORD non è impostata,
+// l'app resta aperta a chiunque abbia il link (comportamento di sempre).
+const APP_PASSWORD = import.meta.env.VITE_APP_PASSWORD;
+const UNLOCK_KEY = "spazidesk_unlocked";
+
+function Lock({ onUnlock }) {
+  const [pw, setPw]   = useState("");
+  const [err, setErr] = useState(false);
+  function submit() {
+    if (pw === APP_PASSWORD) {
+      try { localStorage.setItem(UNLOCK_KEY, "1"); } catch {}
+      onUnlock();
+    } else { setErr(true); }
+  }
+  return (
+    <div style={{display:"flex",flexDirection:"column",alignItems:"center",
+      justifyContent:"center",gap:16,height:"100vh",background:"#0A0A0A",
+      width:"100%",padding:24}}>
+      <Logo size={48} white />
+      <input type="password" autoFocus placeholder="Password"
+        value={pw}
+        onChange={e=>{setPw(e.target.value); setErr(false);}}
+        onKeyDown={e=>e.key==="Enter" && submit()}
+        style={{width:"100%",maxWidth:280,padding:"12px 14px",borderRadius:10,
+          border:"1.5px solid #333",background:"#161616",color:"#fff",
+          fontSize:15,textAlign:"center",outline:"none"}} />
+      <button onClick={submit}
+        style={{width:"100%",maxWidth:280,background:"#fff",color:"#0A0A0A",
+          border:"none",padding:"12px 16px",borderRadius:10,fontSize:14,
+          fontWeight:700,cursor:"pointer"}}>Entra</button>
+      {err && <p style={{color:"#E06C6C",fontSize:13,margin:0}}>Password errata</p>}
+    </div>
+  );
+}
+
 // ── Logo ─────────────────────────────────────────────────────
 const LOGO_B64 = "data:image/png;base64,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";
 function Logo({ size = 28, white = false }) {
@@ -69,6 +105,10 @@ function parseDate(s) {
 
 // ── APP ───────────────────────────────────────────────────────
 export default function App() {
+  const [unlocked, setUnlocked] = useState(() => {
+    if (!APP_PASSWORD) return true;
+    try { return localStorage.getItem(UNLOCK_KEY) === "1"; } catch { return false; }
+  });
   const [movimenti, setMovimenti] = useState([]);
   const [tab, setTab]             = useState("dashboard");
   const [showForm, setShowForm]   = useState(false);
@@ -145,6 +185,8 @@ export default function App() {
     setShowForm(false); setToast(true); setTimeout(()=>setToast(false),2000);
   }
   function confirmDelete(id){ setMovimenti(prev=>prev.filter(m=>m.id!==id)); setDeleteId(null); }
+
+  if (!unlocked) return <Lock onUnlock={()=>setUnlocked(true)} />;
 
   if (loading) return (
     <div style={{display:"flex",alignItems:"center",justifyContent:"center",
