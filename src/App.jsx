@@ -69,23 +69,6 @@ export default function App() {
                   met:"Bonifico",cli:"",centro:"Generale",stato:"Pagato",note:"" };
   const [form, setForm] = useState(EMPTY);
 
-  // forza 100vw su body/html al mount
-  useEffect(() => {
-    const style = document.createElement("style");
-    style.textContent = `
-      *, *::before, *::after { box-sizing: border-box; }
-      html, body, #root {
-        width: 100%;
-        max-width: 100%;
-        overflow-x: hidden;
-        margin: 0;
-        padding: 0;
-      }
-    `;
-    document.head.appendChild(style);
-    return () => document.head.removeChild(style);
-  }, []);
-
   useEffect(() => {
     (async () => {
       const stored = await load("spazidesk_v3");
@@ -548,7 +531,7 @@ function Fld({ label, children, style:st }) {
 const S = {
   // root: occupa ESATTAMENTE 100% della viewport, mai più
   root: {
-    width:"100vw", maxWidth:"100vw",
+    width:"100%", maxWidth:"100%",
     overflowX:"hidden",
     minHeight:"100vh",
     display:"flex", flexDirection:"column",
