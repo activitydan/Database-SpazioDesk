@@ -18,7 +18,17 @@ rsiLen   = input.int(2, "RSI Length", minval = 1)
 midLevel = input.float(50, "Mid Level")
 srcRsi   = input.source(close, "RSI Source")
 
+// --- Filtri ---
+maLen    = input.int(50, "MA Length", minval = 1, group = "Filtri")
+adxLen   = input.int(14, "ADX Length", minval = 1, group = "Filtri")
+adxLevel = input.float(25, "ADX Threshold", group = "Filtri")
+
 rsi = ta.rsi(srcRsi, rsiLen)
+
+// Filtro MA (trend) + filtro forza del trend ADX
+ma50 = ta.sma(close, maLen)
+[diPlus, diMinus, adx] = ta.dmi(adxLen, adxLen)
+adxOk = adx > adxLevel
 
 crossUp   = ta.crossover(rsi, midLevel)
 crossDown = ta.crossunder(rsi, midLevel)
@@ -98,11 +108,18 @@ sellPhase    := (sph == 3 and crossUp and rsi >= sellFirstLow) ? 2 : sellPhase
 sellSignal = (sellBreak2 and rsi < sellFirstLow) or (sph == 3 and rsi < sellFirstLow)
 sellPhase := sellSignal ? 0 : sellPhase
 
+// ------------------------- Segnali filtrati ----------------------------------
+// LONG: prezzo sopra la MA50 e ADX > soglia. SHORT: prezzo sotto la MA50 e
+// ADX > soglia. Con ADX sotto la soglia si ignora tutto.
+longOk  = buySignal and close > ma50 and adxOk
+shortOk = sellSignal and close < ma50 and adxOk
+
 // ------------------------------- Plotting ------------------------------------
-plotshape(buySignal, title = "LONG", style = shape.labelup, location = location.belowbar, color = color.new(color.green, 0), textcolor = color.white, text = "LONG", size = size.small)
-plotshape(sellSignal, title = "SHORT", style = shape.labeldown, location = location.abovebar, color = color.new(color.red, 0), textcolor = color.white, text = "SHORT", size = size.small)
-barcolor(buySignal ? color.new(color.green, 0) : sellSignal ? color.new(color.red, 0) : na)
+plot(ma50, title = "MA50", color = color.new(color.orange, 0))
+plotshape(longOk, title = "LONG", style = shape.labelup, location = location.belowbar, color = color.new(color.green, 0), textcolor = color.white, text = "LONG", size = size.small)
+plotshape(shortOk, title = "SHORT", style = shape.labeldown, location = location.abovebar, color = color.new(color.red, 0), textcolor = color.white, text = "SHORT", size = size.small)
+barcolor(longOk ? color.new(color.green, 0) : shortOk ? color.new(color.red, 0) : na)
 
 // -------------------------------- Alerts -------------------------------------
-alertcondition(buySignal, "RSI(2) Sequence LONG", "RSI(2) sequence LONG signal")
-alertcondition(sellSignal, "RSI(2) Sequence SHORT", "RSI(2) sequence SHORT signal")
+alertcondition(longOk, "RSI(2) Sequence LONG", "RSI(2) sequence LONG signal")
+alertcondition(shortOk, "RSI(2) Sequence SHORT", "RSI(2) sequence SHORT signal")
