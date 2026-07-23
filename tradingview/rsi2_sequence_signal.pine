@@ -19,16 +19,17 @@ midLevel = input.float(50, "Mid Level")
 srcRsi   = input.source(close, "RSI Source")
 
 // --- Filtri ---
-maLen    = input.int(50, "MA Length", minval = 1, group = "Filtri")
-adxLen   = input.int(14, "ADX Length", minval = 1, group = "Filtri")
-adxLevel = input.float(25, "ADX Threshold", group = "Filtri")
+maLen   = input.int(50, "MA Length", minval = 1, group = "Filtri")
+adxLen  = input.int(14, "ADX Length", minval = 1, group = "Filtri")
+adxLow  = input.float(20, "ADX Lower Level", group = "Filtri")
+adxHigh = input.float(40, "ADX Upper Level", group = "Filtri")
 
 rsi = ta.rsi(srcRsi, rsiLen)
 
-// Filtro MA (trend) + filtro forza del trend ADX
+// Filtro MA (trend) + filtro ADX: opera solo con ADX sotto adxLow o sopra adxHigh
 ma50 = ta.sma(close, maLen)
 [diPlus, diMinus, adx] = ta.dmi(adxLen, adxLen)
-adxOk = adx > adxLevel
+adxOk = adx < adxLow or adx > adxHigh
 
 crossUp   = ta.crossover(rsi, midLevel)
 crossDown = ta.crossunder(rsi, midLevel)
