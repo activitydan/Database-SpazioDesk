@@ -1,0 +1,145 @@
+//@version=5
+// =============================================================================
+// RSI(2) Sequence Signal  — Long / Short
+// -----------------------------------------------------------------------------
+// Segnala LONG o SHORT quando l'RSI (periodo 2) completa una sequenza precisa
+// di 3 segnali attorno al livello 50.
+//
+// BUY (long):
+//   1) L'RSI da sotto 50 sale sopra 50            -> 1° segnale (primo tratto)
+//   2) L'RSI ritorna sotto 50, MA senza scendere
+//      sotto il minimo che ha originato il 1° tratto  -> 2° segnale (higher low)
+//   3) L'RSI torna sopra 50 SUPERANDO il massimo
+//      del primo tratto della sequenza            -> 3° segnale => LONG
+//
+// SELL (short): esatto speculare del BUY (invertito attorno al 50).
+// =============================================================================
+
+indicator("RSI(2) Sequence Signal — Long/Short", overlay = true)
+
+// ------------------------------ Inputs ---------------------------------------
+rsiLen   = input.int(2,     "RSI Length",  minval = 1)
+midLevel = input.float(50,  "Mid Level")
+srcRsi   = input.source(close, "RSI Source")
+
+rsi = ta.rsi(srcRsi, rsiLen)
+
+crossUp   = ta.crossover(rsi, midLevel)   // RSI passa sopra 50
+crossDown = ta.crossunder(rsi, midLevel)  // RSI passa sotto 50
+
+// ---------------- Estremi del segmento corrente (sopra/sotto 50) -------------
+// segLow  = minimo dell'ultima escursione SOTTO il livello (dip)
+// segHigh = massimo dell'ultima escursione SOPRA il livello (rally)
+// Alla rottura del 50 salviamo l'estremo del segmento appena concluso.
+var float segLow    = na
+var float segHigh   = na
+var float lastTrough = na   // minimo del dip appena concluso (prima di crossUp)
+var float lastPeak   = na   // massimo del rally appena concluso (prima di crossDown)
+
+prevLow  = segLow
+prevHigh = segHigh
+
+if crossUp
+    lastTrough := na(prevLow)  ? rsi : prevLow
+    segHigh    := rsi
+    segLow     := na
+else if crossDown
+    lastPeak   := na(prevHigh) ? rsi : prevHigh
+    segLow     := rsi
+    segHigh    := na
+else
+    if rsi < midLevel
+        segLow  := na(segLow)  ? rsi : math.min(segLow, rsi)
+    if rsi > midLevel
+        segHigh := na(segHigh) ? rsi : math.max(segHigh, rsi)
+
+// ============================= BUY STATE MACHINE =============================
+// phase 0 = idle | 1 = 1° tratto sopra 50 | 2 = pullback sotto 50 | 3 = 2° tratto sopra 50
+var int   buyPhase     = 0
+var float buyRefLow    = na   // minimo del 1° segnale (il pullback non deve romperlo)
+var float buyFirstHigh = na   // massimo del primo tratto (da superare)
+var float buyPullLow   = na
+
+buySignal = false
+
+if buyPhase == 0
+    if crossUp
+        buyPhase     := 1
+        buyFirstHigh := rsi
+        buyRefLow    := na(lastTrough) ? rsi : lastTrough
+else if buyPhase == 1
+    buyFirstHigh := math.max(buyFirstHigh, rsi)
+    if crossDown
+        buyPhase   := 2
+        buyPullLow := rsi
+else if buyPhase == 2
+    buyPullLow := math.min(buyPullLow, rsi)
+    if buyPullLow < buyRefLow
+        buyPhase := 0                       // pullback ha rotto il minimo -> sequenza invalidata
+    else if crossUp
+        if rsi > buyFirstHigh
+            buySignal := true               // breakout immediato sul re-incrocio
+            buyPhase  := 0
+        else
+            buyPhase  := 3
+else if buyPhase == 3
+    if rsi > buyFirstHigh
+        buySignal := true                   // supera il massimo del primo tratto -> LONG
+        buyPhase  := 0
+    else if crossDown
+        buyPhase   := 2                      // ricade sotto 50 senza breakout -> nuovo pullback
+        buyPullLow := rsi
+
+// ============================ SELL STATE MACHINE ============================
+// phase 0 = idle | 1 = 1° tratto sotto 50 | 2 = pullback sopra 50 | 3 = 2° tratto sotto 50
+var int   sellPhase     = 0
+var float sellRefHigh   = na  // massimo del 1° segnale (il pullback non deve romperlo)
+var float sellFirstLow  = na  // minimo del primo tratto (da rompere)
+var float sellPullHigh  = na
+
+sellSignal = false
+
+if sellPhase == 0
+    if crossDown
+        sellPhase    := 1
+        sellFirstLow := rsi
+        sellRefHigh  := na(lastPeak) ? rsi : lastPeak
+else if sellPhase == 1
+    sellFirstLow := math.min(sellFirstLow, rsi)
+    if crossUp
+        sellPhase    := 2
+        sellPullHigh := rsi
+else if sellPhase == 2
+    sellPullHigh := math.max(sellPullHigh, rsi)
+    if sellPullHigh > sellRefHigh
+        sellPhase := 0                      // pullback ha rotto il massimo -> sequenza invalidata
+    else if crossDown
+        if rsi < sellFirstLow
+            sellSignal := true              // breakdown immediato sul re-incrocio
+            sellPhase  := 0
+        else
+            sellPhase  := 3
+else if sellPhase == 3
+    if rsi < sellFirstLow
+        sellSignal := true                  // rompe il minimo del primo tratto -> SHORT
+        sellPhase  := 0
+    else if crossUp
+        sellPhase    := 2                    // risale sopra 50 senza breakdown -> nuovo pullback
+        sellPullHigh := rsi
+
+// ------------------------------- Plotting ------------------------------------
+plotshape(buySignal,  title = "LONG",  style = shape.labelup,   location = location.belowbar,
+          color = color.new(color.green, 0), textcolor = color.white, text = "LONG",  size = size.small)
+plotshape(sellSignal, title = "SHORT", style = shape.labeldown, location = location.abovebar,
+          color = color.new(color.red, 0),   textcolor = color.white, text = "SHORT", size = size.small)
+
+barcolor(buySignal ? color.new(color.green, 0) : sellSignal ? color.new(color.red, 0) : na)
+
+// -------------------------------- Alerts -------------------------------------
+alertcondition(buySignal,  "RSI(2) Sequence LONG",  "RSI(2) sequence LONG signal triggered")
+alertcondition(sellSignal, "RSI(2) Sequence SHORT", "RSI(2) sequence SHORT signal triggered")
+
+if buySignal
+    alert("RSI(2) sequence LONG signal", alert.freq_once_per_bar_close)
+if sellSignal
+    alert("RSI(2) sequence SHORT signal", alert.freq_once_per_bar_close)
