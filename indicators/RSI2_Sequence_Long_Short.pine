@@ -46,15 +46,8 @@ crossDn = ta.crossunder(rsi, 50)
 var float belowLow  = na   // minimo raggiunto nel tratto sotto 50 corrente
 var float aboveHigh = na   // massimo raggiunto nel tratto sopra 50 corrente
 
-if crossDn
-    belowLow := rsi
-else if rsi < 50
-    belowLow := na(belowLow) ? rsi : math.min(belowLow, rsi)
-
-if crossUp
-    aboveHigh := rsi
-else if rsi > 50
-    aboveHigh := na(aboveHigh) ? rsi : math.max(aboveHigh, rsi)
+belowLow  := crossDn ? rsi : (rsi < 50 ? (na(belowLow)  ? rsi : math.min(belowLow,  rsi)) : belowLow)
+aboveHigh := crossUp ? rsi : (rsi > 50 ? (na(aboveHigh) ? rsi : math.max(aboveHigh, rsi)) : aboveHigh)
 
 // ---------------------------- STATE MACHINE LONG ----------------------------
 // 0 = idle | 1 = segnale1 fatto (attende crossDn) | 2 = segnale2 fatto (attende crossUp) | 3 = attende superamento Punto B
