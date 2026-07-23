@@ -1,0 +1,178 @@
+//@version=6
+indicator("RSI(2) Sequence Long/Short", shorttitle="RSI2-Seq", overlay=true, max_labels_count=500, max_lines_count=500)
+
+// =====================================================================================
+// RSI(2) SEQUENCE INDICATOR
+// Replica la logica dell'EA MT5: sequenza a 3 segnali sull'RSI attorno al livello 50.
+//
+// LONG (specchiato per lo SHORT):
+//   Segnale 1: RSI incrocia da sotto 50 a sopra 50            -> registra il minimo
+//              del tratto sotto 50 appena concluso (Punto A)
+//   Segnale 2: RSI ritorna sotto 50, MA senza rompere sotto
+//              il Punto A (altrimenti sequenza invalidata)    -> registra il massimo
+//              del tratto sopra 50 appena concluso (Punto B)
+//   Segnale 3: RSI ritorna sopra 50 e supera il Punto B       -> TRIGGER BUY
+// =====================================================================================
+
+// ---------------------------- INPUT ----------------------------
+grpRSI   = "RSI"
+rsiLen   = input.int(2, "Periodo RSI", minval=1, group=grpRSI)
+rsiSrc   = input.source(close, "Sorgente RSI", group=grpRSI)
+
+grpRisk  = "Rischio / Stop (solo visualizzazione)"
+rrRatio    = input.float(2.0, "Rischio/Rendimento (es. 2 = 1:2)", minval=0.1, step=0.1, group=grpRisk)
+slBars     = input.int(20, "Candele in analisi per lo Stop Loss", minval=1, group=grpRisk)
+slTicksBuf = input.int(20, "Tick aggiuntivi allo Stop Loss", minval=0, group=grpRisk)
+
+grpSess  = "Fascia oraria"
+useSession = input.bool(true, "Attiva filtro fascia oraria", group=grpSess)
+sessStart  = input.int(8, "Ora inizio (0-23)", minval=0, maxval=23, group=grpSess)
+sessEnd    = input.int(18, "Ora fine (0-23)", minval=0, maxval=23, group=grpSess)
+
+grpFilt  = "Filtri segnale"
+oneDirOnly = input.bool(true, "Non ripetere segnali nella stessa direzione (come l'EA)", group=grpFilt)
+
+grpView  = "Visualizzazione"
+showPivots = input.bool(false, "Mostra pivot 1/2 della sequenza (debug)", group=grpView)
+showSLTP   = input.bool(true, "Mostra SL/TP teorici sul segnale", group=grpView)
+
+// ---------------------------- RSI E CROSS ----------------------------
+rsi = ta.rsi(rsiSrc, rsiLen)
+
+crossUp = ta.crossover(rsi, 50)
+crossDn = ta.crossunder(rsi, 50)
+
+// tracciamento continuo degli estremi del tratto corrente (sopra/sotto 50)
+var float belowLow  = na   // minimo raggiunto nel tratto sotto 50 corrente
+var float aboveHigh = na   // massimo raggiunto nel tratto sopra 50 corrente
+
+if crossDn
+    belowLow := rsi
+else if rsi < 50
+    belowLow := na(belowLow) ? rsi : math.min(belowLow, rsi)
+
+if crossUp
+    aboveHigh := rsi
+else if rsi > 50
+    aboveHigh := na(aboveHigh) ? rsi : math.max(aboveHigh, rsi)
+
+// ---------------------------- STATE MACHINE LONG ----------------------------
+// 0 = idle | 1 = segnale1 fatto (attende crossDn) | 2 = segnale2 fatto (attende crossUp) | 3 = attende superamento Punto B
+var int   longState  = 0
+var float longPointA = na  // minimo del tratto pre-segnale1
+var float longPointB = na  // massimo del primo tratto sopra 50
+
+longSignal = false
+long1 = false
+long2 = false
+
+if crossUp
+    if longState == 0
+        longPointA := belowLow
+        longState  := 1
+        long1 := true
+    else if longState == 2
+        longState := 3
+
+if crossDn
+    if longState == 1
+        longPointB := aboveHigh
+        longState  := 2
+        long2 := true
+    else if longState == 3
+        longState := 0   // non ha superato il Punto B: sequenza fallita
+
+if longState == 2 and not na(longPointA) and rsi < longPointA
+    longState := 0   // nuovo minimo inferiore: sequenza invalidata
+
+if longState == 3 and not na(longPointB) and rsi > longPointB
+    longSignal := true
+    longState  := 0
+
+// ---------------------------- STATE MACHINE SHORT (specchiata) ----------------------------
+var int   shortState  = 0
+var float shortPointA = na  // massimo del tratto pre-segnale1
+var float shortPointB = na  // minimo del primo tratto sotto 50
+
+shortSignal = false
+short1 = false
+short2 = false
+
+if crossDn
+    if shortState == 0
+        shortPointA := aboveHigh
+        shortState  := 1
+        short1 := true
+    else if shortState == 2
+        shortState := 3
+
+if crossUp
+    if shortState == 1
+        shortPointB := belowLow
+        shortState  := 2
+        short2 := true
+    else if shortState == 3
+        shortState := 0
+
+if shortState == 2 and not na(shortPointA) and rsi > shortPointA
+    shortState := 0
+
+if shortState == 3 and not na(shortPointB) and rsi < shortPointB
+    shortSignal := true
+    shortState  := 0
+
+// ---------------------------- FILTRO FASCIA ORARIA ----------------------------
+inSession = not useSession or (hour >= sessStart and hour < sessEnd)
+
+// ---------------------------- FILTRO "NON RI-SEGNALARE STESSA DIREZIONE" ----------------------------
+var int lastSignalDir = 0  // 1 = long, -1 = short
+
+finalLong  = false
+finalShort = false
+
+if longSignal and inSession
+    if not oneDirOnly or lastSignalDir != 1
+        finalLong := true
+        lastSignalDir := 1
+
+if shortSignal and inSession
+    if not oneDirOnly or lastSignalDir != -1
+        finalShort := true
+        lastSignalDir := -1
+
+// ---------------------------- SL / TP TEORICI ----------------------------
+tick = syminfo.mintick
+
+longSL = ta.lowest(low, slBars) - slTicksBuf * tick
+longRisk = close - longSL
+longTP = close + longRisk * rrRatio
+
+shortSL = ta.highest(high, slBars) + slTicksBuf * tick
+shortRisk = shortSL - close
+shortTP = close - shortRisk * rrRatio
+
+// ---------------------------- PLOT SEGNALI ----------------------------
+plotshape(finalLong,  title="BUY",  style=shape.triangleup,   location=location.belowbar, color=color.new(color.lime, 0),  size=size.small, text="BUY")
+plotshape(finalShort, title="SELL", style=shape.triangledown, location=location.abovebar, color=color.new(color.red,  0),  size=size.small, text="SELL")
+
+if finalLong and showSLTP
+    label.new(bar_index, low, "BUY\nSL: " + str.tostring(longSL, format.mintick) + "\nTP: " + str.tostring(longTP, format.mintick),
+         style=label.style_label_up, color=color.new(color.lime, 70), textcolor=color.black, size=size.small)
+
+if finalShort and showSLTP
+    label.new(bar_index, high, "SELL\nSL: " + str.tostring(shortSL, format.mintick) + "\nTP: " + str.tostring(shortTP, format.mintick),
+         style=label.style_label_down, color=color.new(color.red, 70), textcolor=color.black, size=size.small)
+
+// ---------------------------- PIVOT DEBUG (opzionale) ----------------------------
+plotshape(showPivots and long1,  title="Long Sig1",  style=shape.circle, location=location.belowbar, color=color.new(color.teal, 40), size=size.tiny, text="L1")
+plotshape(showPivots and long2,  title="Long Sig2",  style=shape.circle, location=location.belowbar, color=color.new(color.teal, 0),  size=size.tiny, text="L2")
+plotshape(showPivots and short1, title="Short Sig1", style=shape.circle, location=location.abovebar, color=color.new(color.maroon, 40), size=size.tiny, text="S1")
+plotshape(showPivots and short2, title="Short Sig2", style=shape.circle, location=location.abovebar, color=color.new(color.maroon, 0), size=size.tiny, text="S2")
+
+// ---------------------------- RSI IN PANNELLO SEPARATO (facoltativo, commentare se non serve) ----------------------------
+// hline(50, "50", color=color.gray)
+// plot(rsi, "RSI", color=color.blue)
+
+// ---------------------------- ALERT ----------------------------
+alertcondition(finalLong,  title="RSI2 Sequence BUY",  message="RSI2 Sequence: segnale BUY")
+alertcondition(finalShort, title="RSI2 Sequence SELL", message="RSI2 Sequence: segnale SELL")
