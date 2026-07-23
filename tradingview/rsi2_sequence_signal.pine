@@ -12,7 +12,9 @@
 //   SELL: esatto speculare (invertito attorno al 50).
 //
 // Filtri:
-//   - MA50: LONG solo con prezzo sopra la MA, SHORT solo con prezzo sotto.
+//   - EMA: la media deve stare TUTTA FUORI dal corpo (open-close) della candela.
+//          LONG solo con EMA sotto il corpo, SHORT solo con EMA sopra il corpo.
+//          Se l'EMA entra nel corpo -> nessun segnale. Puo' toccare le ombre.
 //   - ADX : opera solo quando ADX e' FUORI dalla banda (sotto adxLow o sopra adxHigh).
 //
 // NOTA: scritto SENZA blocchi indentati (solo assegnazioni su singola riga)
@@ -26,15 +28,19 @@ midLevel = input.float(50, "Mid Level")
 srcRsi   = input.source(close, "RSI Source")
 
 // --- Filtri ---
-maLen   = input.int(50, "MA Length", minval = 1, group = "Filtri")
+emaLen  = input.int(50, "EMA Length", minval = 1, group = "Filtri")
 adxLen  = input.int(14, "ADX Length", minval = 1, group = "Filtri")
 adxLow  = input.float(20, "ADX Lower Level", group = "Filtri")
 adxHigh = input.float(40, "ADX Upper Level", group = "Filtri")
 
 rsi = ta.rsi(srcRsi, rsiLen)
 
-// Filtro MA (trend) + filtro ADX: opera solo con ADX sotto adxLow o sopra adxHigh
-ma50 = ta.sma(close, maLen)
+// Filtro EMA (trend + corpo candela) e filtro ADX (fuori dalla banda)
+ema50 = ta.ema(close, emaLen)
+bodyTop = math.max(open, close)
+bodyBot = math.min(open, close)
+emaBelowBody = ema50 < bodyBot   // EMA tutta sotto il corpo -> lato LONG
+emaAboveBody = ema50 > bodyTop   // EMA tutta sopra il corpo -> lato SHORT
 [diPlus, diMinus, adx] = ta.dmi(adxLen, adxLen)
 adxOk = adx < adxLow or adx > adxHigh
 
@@ -109,11 +115,13 @@ sellRaw = (sph == 3 and rsi < s1Low) or (sph == 2 and s2High <= startHigh and cr
 sellPhase := sellRaw ? 0 : sellPhase
 
 // ------------------------- Segnali filtrati ----------------------------------
-longOk  = buyRaw and close > ma50 and adxOk
-shortOk = sellRaw and close < ma50 and adxOk
+// L'EMA deve stare tutta fuori dal corpo (sotto per LONG, sopra per SHORT):
+// se tocca il corpo (tra open e close) niente segnale; le ombre possono essere toccate.
+longOk  = buyRaw and emaBelowBody and adxOk
+shortOk = sellRaw and emaAboveBody and adxOk
 
 // ------------------------------- Plotting ------------------------------------
-plot(ma50, title = "MA50", color = color.new(color.orange, 0))
+plot(ema50, title = "EMA", color = color.new(color.orange, 0))
 plotshape(longOk, title = "LONG", style = shape.labelup, location = location.belowbar, color = color.new(color.green, 0), textcolor = color.white, text = "LONG", size = size.small)
 plotshape(shortOk, title = "SHORT", style = shape.labeldown, location = location.abovebar, color = color.new(color.red, 0), textcolor = color.white, text = "SHORT", size = size.small)
 barcolor(longOk ? color.new(color.green, 0) : shortOk ? color.new(color.red, 0) : na)
